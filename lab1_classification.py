@@ -111,8 +111,8 @@ class Custom_ANN():
                 layer1_delta = layer1_error * self._sigmoidDerivative(np.dot(x_batch, self.W1))
                 layer1_adjustment = self.lr * (np.dot(np.transpose(x_batch), layer1_delta))
                 layer2_adjustment = self.lr * (np.dot(np.transpose(layer1), layer2_delta))
-                #self.W1 -= layer1_adjustment
-                #self.W2 -= layer2_adjustment
+                self.W1 -= layer1_adjustment
+                self.W2 -= layer2_adjustment
         sys.stdout.write('\n')
         # Done
         pass
@@ -128,6 +128,19 @@ class Custom_ANN():
         # TODO: Reshaping x here, find better solution.
         x_trans = np.reshape(xVals, (len(xVals), 784))
         _, layer2 = self._forward(x_trans)
+
+        # Make decision (set max to 1.0 and everything else to 0.0)
+        # (Choose the classification we are most confident in)
+        for i in range(len(layer2)):
+            ind = 0
+            max = 0
+            for j in range(len(layer2[i])):
+                if layer2[i][j] > max:
+                    max = layer2[i][j]
+                    ind = j
+                layer2[i][j] = 0.0
+            layer2[i][ind] = 1.0
+
         return layer2
 
 
@@ -274,7 +287,8 @@ def main():
     data = preprocessData(raw, nc, w, h, ch)
     model = trainModel(data[0], nc, w, h, ch)
     preds = runModel(data[1][0], model)
-    print(preds[:10])
+    print(preds[:3])
+    print(data[1][1][:3])
     evalResults(data[1], preds)
 
 
