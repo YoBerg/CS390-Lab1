@@ -69,7 +69,7 @@ class Custom_ANN():
     def _sigmoidDerivative(self, x):    
         #TODO: implement    
         sig = self._sigmoid(x)
-        return sig * (1 - sig)
+        return sig * (1 - sig)   
 
     # Batch generator for mini-batches. Not randomized.
     # **Appears to create generator breaking l into n sized segments.
@@ -87,22 +87,26 @@ class Custom_ANN():
         # Run epoch
         for epoch in range(epochs):
             # Progress bar
-            sys.stdout.write('\r')
-            j = (epoch + 1) / epochs
-            sys.stdout.write("[%-20s] %d%%" % ('='*int(20*j), 100*j))
+            # sys.stdout.write('\r')
+            # j = (epoch + 1) / epochs
+            # sys.stdout.write("[%-20s] %d%%" % ('='*int(20*j), 100*j))
             sys.stdout.flush()
 
             # Create batches
-            # TODO: Reshaping x here. Find better solution?
             x_trans = np.reshape(xVals, (len(xVals), 784))
             x_batches = self._batchGenerator(x_trans, mbs)
             y_batches = self._batchGenerator(yVals, mbs)
+
+            sse = 0
 
             # Run batches
             for x_batch, y_batch in zip(x_batches, y_batches):
 
                 # Forward prop
                 layer1, layer2 = self._forward(x_batch)
+
+                error = np.sum((layer2 - y_batch) ** 2)
+                sse += error
 
                 # Back prop
                 layer2_error = layer2 - y_batch
@@ -113,6 +117,10 @@ class Custom_ANN():
                 layer2_adjustment = self.lr * (np.dot(np.transpose(layer1), layer2_delta))
                 self.W1 -= layer1_adjustment
                 self.W2 -= layer2_adjustment
+
+            print("Epoch " + str(epoch) + "/" + str(epochs))
+            sse /= len(yVals)
+            print("Error: " + str(sse))
         sys.stdout.write('\n')
         # Done
         pass
@@ -250,7 +258,7 @@ def trainModel(data, numClasses, imgW, imgH, imgC):
         print("dimensions: " + str(imgW) + "," + str(imgH) + "," + str(imgC))
         # transformed_x = np.reshape(xTrain, (len(xTrain), imgW * imgH * imgC))
         print("Initializing with " + str(imgW * imgH * imgC) + " input size and " + str(numClasses) + " output size.")
-        custom_ann = Custom_ANN(imgW * imgH * imgC, numClasses, 10)
+        custom_ann = Custom_ANN(imgW * imgH * imgC, numClasses, 68, 0.01)
 
         custom_ann.train(xTrain, yTrain)
         return custom_ann
