@@ -17,8 +17,8 @@ torch.manual_seed(1618)
 
 # Use these to set the algorithm to use.
 # ALGORITHM = "guesser"
-ALGORITHM = "custom_ann"
-#ALGORITHM = "pytorch_ann"
+# ALGORITHM = "custom_ann"
+ALGORITHM = "pytorch_ann"
 #ALGORITHM = "pytorch_cnn"
 
 DATASET = "mnist_d"             # Handwritten digits.
@@ -164,8 +164,21 @@ class Pytorch_ANN(nn.Module):
     def __init__(self):
         super(Pytorch_ANN, self).__init__()
 
+        self.hidden = nn.Linear(784, 120)
+        self.output = nn.Linear(120,10)
+        self.relu = nn.ReLU()
+        self.softmax = nn.Softmax(dim=1)
+
     def forward(self, x):
-        raise NotImplementedError()
+        x = np.reshape(x, (len(x), 784)) / 255
+        x = torch.from_numpy(x)
+        x = x.float()
+        x = self.hidden(x)
+        x = self.relu(x)
+        x = self.output(x)
+        x = self.softmax(x)
+        return x
+
 
 
 
@@ -250,7 +263,7 @@ def preprocessData(raw, numClasses, imgW, imgH, imgC):
 
 
 
-def trainModel(data, numClasses, imgW, imgH, imgC):
+def trainModel(data, numClasses, imgW, imgH, imgC, epochs = 100):
     xTrain, yTrain = data
     if ALGORITHM == "guesser":
         return guesserClassifier   # Guesser has no training, as it is just guessing.
@@ -260,8 +273,32 @@ def trainModel(data, numClasses, imgW, imgH, imgC):
         print("Initializing with " + str(imgW * imgH * imgC) + " input size and " + str(numClasses) + " output size.")
         custom_ann = Custom_ANN(imgW * imgH * imgC, numClasses, 68, 0.01)
 
-        custom_ann.train(xTrain, yTrain)
+        custom_ann.train(xTrain, yTrain, epochs)
         return custom_ann
+    elif ALGORITHM == "pytorch_ann":
+        model = Pytorch_ANN()
+        loss_fn = torch.nn.CrossEntropyLoss()
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+        for epoch in range(epochs):
+            print("Epoch # " + str(epoch))
+            # Ready for training
+            model.train(True)
+            optimizer.zero_grad()
+
+            # Run model
+            outputs = model(xTrain)
+
+            # Calculate loss
+            yTrain_tensor = torch.from_numpy(yTrain)
+            loss = loss_fn(outputs, yTrain_tensor)
+            loss.backward()
+
+            # Adjust learning rates
+            optimizer.step()
+
+            # Report
+            print("Loss: " + str(loss))
+        return model
     elif ALGORITHM == "tf_net":
         print("Building and training TF_NN.")
         print("Not yet implemented.")                   #TODO: Write code to build and train your keras neural net.
@@ -277,6 +314,23 @@ def runModel(data, model):
 
 
 def evalResults(data, preds):   #TODO: Add F1 score confusion matrix here.
+    if ALGORITHM == "pytorch_ann":
+        # Cast torch tensor to numpy array
+        preds = preds.cpu().detach().numpy()
+    # Make decision (set max to 1.0 and everything else to 0.0)
+    # (Choose the classification we are most confident in)
+    print("Pred before deciding: " + str(preds[0]))
+    for i in range(len(preds)):
+        ind = 0
+        max = 0
+        for j in range(len(preds[i])):
+            if preds[i][j] > max:
+                max = preds[i][j]
+                ind = j
+            preds[i][j] = 0.0
+        preds[i][ind] = 1.0
+    print("Pred after deciding: " + str(preds[0]))
+    
     xTest, yTest = data
     acc = 0
     for i in range(preds.shape[0]):
@@ -295,8 +349,6 @@ def main():
     data = preprocessData(raw, nc, w, h, ch)
     model = trainModel(data[0], nc, w, h, ch)
     preds = runModel(data[1][0], model)
-    print(preds[:3])
-    print(data[1][1][:3])
     evalResults(data[1], preds)
 
 
