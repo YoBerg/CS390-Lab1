@@ -1,3 +1,4 @@
+from re import X
 import sys
 import os
 import numpy as np
@@ -93,8 +94,7 @@ class Custom_ANN():
             sys.stdout.flush()
 
             # Create batches
-            x_trans = np.reshape(xVals, (len(xVals), 784))
-            x_batches = self._batchGenerator(x_trans, mbs)
+            x_batches = self._batchGenerator(xVals, mbs)
             y_batches = self._batchGenerator(yVals, mbs)
 
             sse = 0
@@ -134,8 +134,7 @@ class Custom_ANN():
     # Predict.
     def __call__(self, xVals):
         # TODO: Reshaping x here, find better solution.
-        x_trans = np.reshape(xVals, (len(xVals), 784))
-        _, layer2 = self._forward(x_trans)
+        _, layer2 = self._forward(xVals)
 
         # Make decision (set max to 1.0 and everything else to 0.0)
         # (Choose the classification we are most confident in)
@@ -164,13 +163,12 @@ class Pytorch_ANN(nn.Module):
     def __init__(self):
         super(Pytorch_ANN, self).__init__()
 
-        self.hidden = nn.Linear(784, 120)
-        self.output = nn.Linear(120,10)
+        self.hidden = nn.Linear(784, 256)
+        self.output = nn.Linear(256,10)
         self.relu = nn.ReLU()
         self.softmax = nn.Softmax(dim=1)
 
     def forward(self, x):
-        x = np.reshape(x, (len(x), 784)) / 255
         x = torch.from_numpy(x)
         x = x.float()
         x = self.hidden(x)
@@ -259,6 +257,8 @@ def preprocessData(raw, numClasses, imgW, imgH, imgC):
     print("New shape of xTest dataset: %s." % str(xTest.shape))
     print("New shape of yTrain dataset: %s." % str(yTrainP.shape))
     print("New shape of yTest dataset: %s." % str(yTestP.shape))
+    xTrain = np.reshape(xTrain, (len(xTrain), 784)) / 255
+    xTest = np.reshape(xTest, (len(xTest), 784)) / 255
     return ((xTrain, yTrainP), (xTest, yTestP))
 
 
