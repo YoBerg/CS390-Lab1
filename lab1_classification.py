@@ -501,7 +501,7 @@ def main():
         else:
             model = Pytorch_CNN()
         model.load_state_dict(torch.load(LOAD))
-        if True:
+        if False:
             xTrain, yTrain = data[0]
             model.train_epochs(xTrain,yTrain,30,0.0001)
     else:
