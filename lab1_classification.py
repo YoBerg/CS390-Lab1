@@ -1,12 +1,15 @@
 from re import X
 import sys
 import os
+import turtle
 import numpy as np
 import torch
 import torch.nn as nn
 import torchvision
 import tensorflow as tf                                     # NOTE: This is just for utils. Do not use tensorflow in your code.
 from tensorflow.keras.utils import to_categorical           # NOTE: This is just for utils. Do not use tensorflow in your code.
+from torch.utils.data import TensorDataset, DataLoader
+import json
 import random
 
 
@@ -19,14 +22,17 @@ torch.manual_seed(1618)
 # Use these to set the algorithm to use.
 # ALGORITHM = "guesser"
 # ALGORITHM = "custom_ann"
-ALGORITHM = "pytorch_ann"
-#ALGORITHM = "pytorch_cnn"
+# ALGORITHM = "pytorch_ann"
+ALGORITHM = "pytorch_cnn"
 
-DATASET = "mnist_d"             # Handwritten digits.
-#DATASET = "mnist_f"            # Scans of types of clothes.
+SAVE = True
+LOAD = "model_in.pt"
+
+# DATASET = "mnist_d"             # Handwritten digits.
+DATASET = "mnist_f"            # Scans of types of clothes.
 #DATASET = "cifar_10"           # Color images (10 classes).
 #DATASET = "cifar_100_f"        # Color images (100 classes).
-#DATASET = "cifar_100_c"        # Color images (20 classes).
+# DATASET = "cifar_100_c"        # Color images (20 classes).
 
 
 '''
@@ -81,9 +87,6 @@ class Custom_ANN():
     # Training with backpropagation.
     def train(self, xVals, yVals, epochs = 100, minibatches = True, mbs = 100):
         #TODO: Implement backprop. allow minibatches. mbs should specify the size of each minibatch.
-        
-        # Prep
-        # self.__init__(len(xVals), len(yVals), 10)
 
         # Run epoch
         for epoch in range(epochs):
@@ -169,8 +172,7 @@ class Pytorch_ANN(nn.Module):
         self.softmax = nn.Softmax(dim=1)
 
     def forward(self, x):
-        x = torch.from_numpy(x)
-        x = x.float()
+        # Run forward propagation
         x = self.hidden(x)
         x = self.relu(x)
         x = self.output(x)
@@ -192,8 +194,100 @@ class Pytorch_CNN(nn.Module):
     def __init__(self):
         super(Pytorch_CNN, self).__init__()
 
+        # First set of layers    [ Conv, Activation, Pool ]
+        self.conv1 = nn.Conv2d(in_channels = 1, out_channels = 24, kernel_size=(5,5))
+        self.relu1 = nn.ReLU()
+        self.maxpool1 = nn.MaxPool2d(kernel_size = (2,2), stride=(2,2))
+
+        self.dropout1 = nn.Dropout(p=0.3)
+
+        # Second set of layers
+        self.conv2 = nn.Conv2d(in_channels = 24, out_channels = 48, kernel_size=(5,5))
+        self.relu2 = nn.ReLU()
+        self.maxpool2 = nn.MaxPool2d(kernel_size = (2,2), stride=(2,2))
+
+        self.dropout2 = nn.Dropout(p=0.3)
+
+        # Softmax classifier
+        self.linear1 = nn.Linear(in_features = 48*4*4, out_features = 496)
+        self.relu3 = nn.ReLU()
+
+        self.dropout3 = nn.Dropout(p=0.3)
+
+        self.linear2 = nn.Linear(in_features = 496, out_features = 10)
+        self.logsoftmax = nn.LogSoftmax(dim=1)
+
+        self.flatten = nn.Flatten()
+
     def forward(self, x):
-        raise NotImplementedError()
+        # Convert numpy array to torch tensor
+        # x = torch.from_numpy(x)
+        # # Permute tensor so we get [ Batch Channels Height Width]
+        # print(x.size())
+        # x = x[None, :]
+        # print(x.size())
+        # x = torch.permute(x, (1, 0, 2, 3))
+        # print(x.size())
+        # # Convert byte array to float array
+        # x = x.float()
+
+        # Pass through first set
+        x = self.conv1(x)
+        x = self.relu1(x)
+        x = self.maxpool1(x)
+
+        x = self.dropout1(x)
+
+        # Pass through second set
+        x = self.conv2(x)
+        x = self.relu2(x)
+        x = self.maxpool2(x)
+
+        x = self.dropout2(x)
+
+        # Pass through fully connected layer
+        x = self.flatten(x)
+        x = self.linear1(x)
+        x = self.relu3(x)
+
+        x = self.dropout3(x)
+
+        x = self.linear2(x)
+        x = self.logsoftmax(x)
+
+        return x
+
+    def train_epochs(self, xTrain, yTrain, epochs = 100, lr = 0.001):
+        loss_fn = torch.nn.CrossEntropyLoss()
+        optimizer = torch.optim.Adam(self.parameters(), lr=lr)
+
+        # Create tensor dataset
+        train_ds = TensorDataset(torch.from_numpy(xTrain).float(), torch.from_numpy(yTrain).float())
+        train_dl = DataLoader(train_ds, batch_size=320)
+
+        for epoch in range(epochs):
+            print("Epoch # " + str(epoch))
+            total_loss = 0
+            for x_batch, y_batch in train_dl:
+                # Ready for training
+                self.train(True)       # Enable training
+                optimizer.zero_grad()
+
+                x_batch = x_batch.unsqueeze(1)
+                # Run model 
+                outputs = self(x_batch)    # Create predictions
+
+                # Calculate loss
+                # yTrain_tensor = torch.from_numpy(yTrain)
+                loss = loss_fn(outputs, y_batch) 
+                loss.backward()
+                total_loss += loss
+
+                # Adjust learning rates
+                optimizer.step()
+            # Report
+            print("Loss: " + str(total_loss))
+        return self
 
 
 
@@ -251,53 +345,65 @@ def getRawData():
 
 def preprocessData(raw, numClasses, imgW, imgH, imgC):
     ((xTrain, yTrain), (xTest, yTest)) = raw            #TODO: Add range reduction here (0-255 ==> 0.0-1.0).
+    xTrain = xTrain.astype(float) / 255
+    xTest = xTest.astype(float) / 255
     yTrainP = to_categorical(yTrain, numClasses)
     yTestP = to_categorical(yTest, numClasses)
     print("New shape of xTrain dataset: %s." % str(xTrain.shape))
     print("New shape of xTest dataset: %s." % str(xTest.shape))
     print("New shape of yTrain dataset: %s." % str(yTrainP.shape))
     print("New shape of yTest dataset: %s." % str(yTestP.shape))
-    xTrain = np.reshape(xTrain, (len(xTrain), 784)) / 255
-    xTest = np.reshape(xTest, (len(xTest), 784)) / 255
+
     return ((xTrain, yTrainP), (xTest, yTestP))
-
-
 
 def trainModel(data, numClasses, imgW, imgH, imgC, epochs = 100):
     xTrain, yTrain = data
     if ALGORITHM == "guesser":
         return guesserClassifier   # Guesser has no training, as it is just guessing.
     elif ALGORITHM == "custom_ann":
+        xTrain = np.reshape(xTrain, (len(xTrain), 784))
         print("dimensions: " + str(imgW) + "," + str(imgH) + "," + str(imgC))
-        # transformed_x = np.reshape(xTrain, (len(xTrain), imgW * imgH * imgC))
         print("Initializing with " + str(imgW * imgH * imgC) + " input size and " + str(numClasses) + " output size.")
         custom_ann = Custom_ANN(imgW * imgH * imgC, numClasses, 68, 0.01)
 
         custom_ann.train(xTrain, yTrain, epochs)
         return custom_ann
+    elif ALGORITHM == "pytorch_cnn":
+        model = Pytorch_CNN()
+        model.train_epochs(xTrain, yTrain, epochs)
+        return model
     elif ALGORITHM == "pytorch_ann":
+        xTrain = np.reshape(xTrain, (len(xTrain), 784))
         model = Pytorch_ANN()
         loss_fn = torch.nn.CrossEntropyLoss()
         optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+
+        # Create tensor dataset
+        train_ds = TensorDataset(torch.from_numpy(xTrain).float(), torch.from_numpy(yTrain).float())
+        train_dl = DataLoader(train_ds, batch_size=320)
+
         for epoch in range(epochs):
             print("Epoch # " + str(epoch))
-            # Ready for training
-            model.train(True)
-            optimizer.zero_grad()
+            total_loss = 0
+            for x_batch, y_batch in train_dl:
 
-            # Run model
-            outputs = model(xTrain)
+                # Prep for training
+                model.train(True)       # This is enable training, not to start training.
+                optimizer.zero_grad()
+                outputs = model(x_batch) # Create predictions
 
-            # Calculate loss
-            yTrain_tensor = torch.from_numpy(yTrain)
-            loss = loss_fn(outputs, yTrain_tensor)
-            loss.backward()
+                # Calculate Loss
+                # yTrain_tensor = torch.from_numpy(yTrain)
+                loss = loss_fn(outputs, y_batch)
+                loss.backward()
+                total_loss += loss
 
-            # Adjust learning rates
-            optimizer.step()
+                # Adjust learning rates.
+                optimizer.step()
 
             # Report
-            print("Loss: " + str(loss))
+            print("Loss: " + str(total_loss))
+
         return model
     elif ALGORITHM == "tf_net":
         print("Building and training TF_NN.")
@@ -309,20 +415,32 @@ def trainModel(data, numClasses, imgW, imgH, imgC, epochs = 100):
 
 
 def runModel(data, model):
-    return model(data)
+    if (ALGORITHM == "custom_ann"):
+        data = np.reshape(data, (len(data), 784))
+        return model(data) 
+    elif (ALGORITHM == "pytorch_ann"):
+        data = np.reshape(data, (len(data), 784))
+        tensor = torch.from_numpy(data).float()
+        return model(tensor)
+    else:
+        tensor = torch.from_numpy(data).float()
+        tensor = tensor.unsqueeze(1)
+        return model(tensor)
 
 
 
 def evalResults(data, preds):   #TODO: Add F1 score confusion matrix here.
-    if ALGORITHM == "pytorch_ann":
+    # Catch if we need to cast tensors.
+    if ALGORITHM == "pytorch_ann" or ALGORITHM == "pytorch_cnn":
         # Cast torch tensor to numpy array
         preds = preds.cpu().detach().numpy()
+    
     # Make decision (set max to 1.0 and everything else to 0.0)
     # (Choose the classification we are most confident in)
     print("Pred before deciding: " + str(preds[0]))
     for i in range(len(preds)):
         ind = 0
-        max = 0
+        max = float("-inf")
         for j in range(len(preds[i])):
             if preds[i][j] > max:
                 max = preds[i][j]
@@ -333,11 +451,39 @@ def evalResults(data, preds):   #TODO: Add F1 score confusion matrix here.
     
     xTest, yTest = data
     acc = 0
+
+    n = preds.shape[1]
+    # Set up confusion matrix
+    confusion_matrix = np.matrix(np.zeros((n, n)), int)
+
     for i in range(preds.shape[0]):
         if np.array_equal(preds[i], yTest[i]):   acc = acc + 1
+
+        # Compare true and predicted values for confusion matrix.
+        pred = np.matrix(preds[i]).transpose()      # n by 1 matrix
+        truth = np.matrix(yTest[i])                 # 1 by n matrix
+        con = np.dot(pred, truth)                   # n by n matrix (only 1 value will be 1, others 0)
+        confusion_matrix = confusion_matrix + con.astype(int)
+
+    # Calculate accuracy.
     accuracy = acc / preds.shape[0]
+
+    # Calculate totals.
+    sum_vector = np.matrix(np.ones(n)) # 1 by n
+    predicted_totals = np.dot(confusion_matrix, sum_vector.transpose())
+    truth_totals = np.dot(sum_vector, confusion_matrix)
+    total = np.dot(truth_totals, predicted_totals)
+
+    # Print results.
     print("Classifier algorithm: %s" % ALGORITHM)
     print("Classifier accuracy: %f%%" % (accuracy * 100))
+    print("Confusion Matrix:    Columns add up to true values and rows add up to predictions")
+    print(confusion_matrix)
+    print("Truth Totals: ")
+    print(truth_totals)
+    print("Predicted Totals:") 
+    print(predicted_totals.transpose())
+    # print("Overall total: " + str(total[0,0]))        # This is wrong anyways.
     print()
 
 
@@ -347,9 +493,23 @@ def evalResults(data, preds):   #TODO: Add F1 score confusion matrix here.
 def main():
     raw, nc, w, h, ch = getRawData()
     data = preprocessData(raw, nc, w, h, ch)
-    model = trainModel(data[0], nc, w, h, ch)
+    model = None
+    if LOAD is not None:
+        print("LOAD found, Loading model from " + LOAD)
+        if ALGORITHM == "pytorch_ann":
+            model = Pytorch_ANN()
+        else:
+            model = Pytorch_CNN()
+        model.load_state_dict(torch.load(LOAD))
+        if True:
+            xTrain, yTrain = data[0]
+            model.train_epochs(xTrain,yTrain,30,0.0001)
+    else:
+        model = trainModel(data[0], nc, w, h, ch)
     preds = runModel(data[1][0], model)
     evalResults(data[1], preds)
+    if SAVE and (ALGORITHM == "pytorch_ann" or ALGORITHM == "pytorch_cnn"):
+        torch.save(model.state_dict(), "model_out.pt")
 
 
 
